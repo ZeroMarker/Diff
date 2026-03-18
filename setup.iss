@@ -4,7 +4,7 @@
 #define MyAppName "Diff Viewer"
 #define MyAppVersion "{{github.ref_name}}"
 #define MyAppPublisher "DBAdminX"
-#define MyAppURL "https://github.com/DBAdminX/{{github.repository}}"
+#define MyAppURL "https://github.com/ZeroMarker/Diff"
 #define MyAppExeName "DiffViewer.exe"
 
 [Setup]
