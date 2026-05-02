@@ -1,318 +1,172 @@
-name: Build and Release Cross-Platform with Icons
+name: Tauri Build
 
 on:
   push:
+    branches:
+      - main
     tags:
-      - 'v*'
+      - "v*"
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: write
-  pull-requests: write
+
+env:
+  NODE_VERSION: "lts/*"
+  RUST_BACKTRACE: 1
 
 jobs:
-  create-release:
-    runs-on: ubuntu-latest
+  desktop:
+    name: Desktop (${{ matrix.platform }})
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+          - platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+            rust_targets: "x86_64-apple-darwin"
+          - platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+            rust_targets: "aarch64-apple-darwin"
+
     steps:
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets || '' }}
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Typecheck and build frontend
+        run: npm run build
+
+      - name: Build Tauri desktop app
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref_name }}
-          release_name: Release ${{ github.ref_name }}
-          draft: false
+          args: ${{ matrix.args }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Diff Viewer {0}', github.ref_name) || '' }}
+          releaseBody: "Desktop builds for Windows, Linux, and macOS."
+          releaseDraft: false
           prerelease: false
-          body: "Auto-generated cross-platform release for Diff Viewer ${{ github.ref_name }}"
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: "[platform]-[arch]-[bundle]"
 
-  generate-icons:
+  android:
+    name: Android
     runs-on: ubuntu-22.04
+    needs: desktop
+    if: github.event_name != 'pull_request'
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Generate icons from icon.svg
-        run: |
-          sudo apt update
-          sudo apt install -y build-essential git pkg-config autoconf automake libtool \
-            libltdl-dev libjpeg-dev libpng-dev libtiff-dev libfreetype6-dev libfontconfig1-dev \
-            libxml2-dev libbz2-dev liblzma-dev libzstd-dev libwebp-dev libopenjp2-7-dev \
-            liblcms2-dev libexpat1-dev libx11-dev libxt-dev libxext-dev libxrender-dev \
-            libcairo2-dev libpango1.0-dev librsvg2-dev libgomp1 zlib1g-dev libgs-dev \
-            ghostscript fonts-liberation fonts-dejavu-core fontconfig
-
-          # 源码安装 ImageMagick 7
-          git clone https://github.com/ImageMagick/ImageMagick.git ImageMagick7
-          cd ImageMagick7
-          git checkout 7.1.2-13  # 或指定最新 tag
-          ./configure --prefix=/usr/local --with-modules --enable-hdri --with-freetype=yes \
-            --with-fontconfig=yes --with-rsvg=yes --with-pango=yes --with-cairo=yes \
-            --with-xml=yes --with-webp=yes --with-openjp2=yes --with-lcms=yes \
-            --with-openexr=yes --with-gslib=yes --with-gvc=yes --with-perl=yes \
-            --with-magick-plus-plus=yes
-          make -j$(nproc)
-          sudo make install
-          sudo ldconfig /usr/local/lib
-          cd ..
-
-          # 安装 icnsutils
-          sudo apt install -y icnsutils
-
-          # 更新字体缓存
-          fc-cache -fv
-
-          # 使用 magick 命令
-          magick convert icon.svg -resize 512x512   icon-512.png
-          magick convert icon.svg -resize 256x256   icon-256.png
-          magick convert icon.svg -resize 128x128   icon-128.png
-          magick convert icon.svg -resize 64x64     icon-64.png
-          magick convert icon.svg -resize 48x48     icon-48.png
-          magick convert icon.svg -resize 32x32     icon-32.png
-          magick convert icon.svg -resize 16x16     icon-16.png
-
-          magick convert icon-*.png icon.ico
-          # 直接用 ImageMagick 生成 .icns（推荐！绕过 png2icns 问题）
-          magick convert icon-*.png -define icns:compositing=yes icon.icns
-
-          # 打包上传
-          mkdir -p icons
-          cp icon.ico icon.icns icon.svg icons/
-
-      - name: Upload generated icons
-        uses: actions/upload-artifact@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          name: generated-icons
-          path: icons/
-          if-no-files-found: error
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
-  build:
-    needs: [create-release, generate-icons]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            target: windows
-            artifact_name: DiffViewer.exe
-            installer_name: DiffViewer-Installer.exe
-            py_ver: '3.11'
-            icon: icon.ico
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
-          - os: macos-latest
-            target: macos
-            artifact_name: DiffViewer
-            py_ver: '3.11'
-            icon: icon.icns
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-          - os: ubuntu-22.04
-            target: linux
-            artifact_name: DiffViewer
-            py_ver: '3.11'
-            icon: icon.svg
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri Android app
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
+        with:
+          mobile: android
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Diff Viewer {0}', github.ref_name) || '' }}
+          releaseBody: "Android build artifact."
+          releaseDraft: false
+          prerelease: false
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: "android-[arch]-[bundle]"
+
+  ios:
+    name: iOS
+    runs-on: macos-latest
+    needs: desktop
+    if: github.event_name != 'pull_request'
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          fetch-depth: 0   # 需要 git log 获取 commit message
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
-      - name: Download generated icons
-        uses: actions/download-artifact@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          name: generated-icons
-          path: icons/
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
         with:
-          python-version: ${{ matrix.py_ver }}
+          workspaces: "./src-tauri -> target"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install customtkinter pyinstaller pillow
-        shell: bash
+      - name: Install frontend dependencies
+        run: npm ci
 
-      - name: Build with PyInstaller
-        run: |
-          pyinstaller --onefile --windowed --name DiffViewer \
-            --icon=icons/${{ matrix.icon }} \
-            --collect-all customtkinter \
-            src/diff.py
-        shell: bash
-
-      - name: Prepare artifact
-        run: |
-          mkdir -p dist/artifacts
-          # macOS: 单文件可执行文件名为 DiffViewer（无 .exe 后缀）
-          if [[ "${{ matrix.target }}" == "macos" ]]; then
-            cp dist/DiffViewer dist/artifacts/DiffViewer
-          else
-            # Windows: DiffViewer.exe
-            # Linux: DiffViewer（单文件）
-            cp dist/DiffViewer* dist/artifacts/${{ matrix.artifact_name }}
-          fi
-        shell: bash
-
-      - name: Upload executable artifact
-        uses: actions/upload-artifact@v4
+      - name: Build Tauri iOS app
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: Diff-${{ matrix.target }}
-          path: dist/artifacts/${{ matrix.artifact_name }}
-          if-no-files-found: error
-
-      - name: Replace App Version
-        if: matrix.target == 'windows'
-        run: |
-          # 先替换版本号占位符
-          sed -i "s/{{github.ref_name}}/${{ github.ref_name }}/g" setup.iss
-        shell: bash
-
-      # Windows 专用：Inno Setup 安装程序
-      - name: Compile Inno Setup Installer (Windows only)
-        if: matrix.target == 'windows'
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
-        with:
-          path: setup.iss
-          options: /O+
-
-      - name: Prepare Windows installer artifact
-        if: matrix.target == 'windows'
-        run: |
-          mkdir -p dist/artifacts
-          cp Output/DiffViewer-Installer.exe dist/artifacts/${{ matrix.installer_name }} || cp Output/setup.exe dist/artifacts/${{ matrix.installer_name }}
-        shell: bash
-
-      - name: Upload Windows installer artifact
-        if: matrix.target == 'windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Diff-Installer
-          path: dist/artifacts/${{ matrix.installer_name }}
-          if-no-files-found: error
-
-      # Linux 专用：生成 .deb 包（使用 SVG 图标）
-      - name: Install fpm (for .deb)
-        if: matrix.target == 'linux'
-        run: |
-          sudo apt update
-          sudo apt install -y ruby-full build-essential zlib1g-dev
-          sudo gem install fpm
-
-      - name: Prepare staging for .deb
-        if: matrix.target == 'linux'
-        run: |
-          mkdir -p staging/usr/bin staging/usr/share/applications staging/usr/share/icons/hicolor/scalable/apps
-          cp dist/DiffViewer staging/usr/bin/DiffViewer
-          chmod +x staging/usr/bin/DiffViewer
-
-          # 桌面快捷方式
-          echo '[Desktop Entry]
-          Name=Diff Viewer
-          Comment=Material You Diff Tool
-          Exec=/usr/bin/DiffViewer
-          Icon=diffviewer
-          Terminal=false
-          Type=Application
-          Categories=Utility;Development;' > staging/usr/share/applications/DiffViewer.desktop
-
-          # 复制 SVG 图标
-          cp icons/icon.svg staging/usr/share/icons/hicolor/scalable/apps/diffviewer.svg
-
-      - name: Build .deb with fpm
-        if: matrix.target == 'linux'
-        run: |
-          fpm -s dir -t deb \
-            -n diffviewer \
-            -v ${{ github.ref_name || '1.0.0' }} \
-            -a amd64 \
-            --description "Material You Diff Viewer - a modern cross-platform diff tool" \
-            --url "https://github.com/${{ github.repository }}" \
-            --maintainer "Zeromark" \
-            --license "MIT" \
-            -C staging \
-            usr
-
-      - name: Upload .deb artifact
-        if: matrix.target == 'linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Diff-deb
-          path: diffviewer_*.deb
-          if-no-files-found: error
-
-      # 获取 commit message 作为 release body
-      - name: Get commit message for release body
-        id: get_commit_msg
-        run: |
-          COMMIT_MSG=$(git log -1 --format=%B ${{ github.sha }})
-          COMMIT_MSG="${COMMIT_MSG//'%'/'%25'}"
-          COMMIT_MSG="${COMMIT_MSG//$'\n'/'%0A'}"
-          COMMIT_MSG="${COMMIT_MSG//$'\r'/'%0D'}"
-          echo "body=Release ${{ github.ref_name }}%0A%0A${COMMIT_MSG}" >> $GITHUB_OUTPUT
-        shell: bash
-
-      # 上传到 Release
-      - name: Upload executable to release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/artifacts/${{ matrix.artifact_name }}
-          asset_name: DiffViewer-${{ matrix.target }}-${{ github.ref_name }}
-          tag: ${{ github.ref_name }}
-          overwrite: true
-          body: ${{ steps.get_commit_msg.outputs.body }}
-
-      - name: Upload Windows installer to release
-        if: matrix.target == 'windows'
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/artifacts/${{ matrix.installer_name }}
-          asset_name: DiffViewer-Installer-${{ github.ref_name }}.exe
-          tag: ${{ github.ref_name }}
-          overwrite: true
-          body: ${{ steps.get_commit_msg.outputs.body }}
-      - name: Find .deb file path
-        if: matrix.target == 'linux'
-        id: find_deb
-        run: |
-          DEB_FILE=$(ls diffviewer_*.deb | head -n 1)  # 只取第一个匹配的文件
-          if [ -z "$DEB_FILE" ]; then
-            echo "No .deb file found!"
-            exit 1
-          fi
-          echo "deb_file=$DEB_FILE" >> $GITHUB_OUTPUT
-        shell: bash
-      - name: Upload .deb to release
-        if: matrix.target == 'linux'
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ steps.find_deb.outputs.deb_file }}
-          asset_name: DiffViewer-${{ github.ref_name }}-linux.deb
-          tag: ${{ github.ref_name }}
-          overwrite: true
-          body: ${{ steps.get_commit_msg.outputs.body }}
-
-  publish-to-winget:
-    needs: build
-    runs-on: windows-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      - name: Get version from tag
-        id: get-version
-        run: |
-          $tag = "${{ github.ref_name }}"
-          $version = $tag -replace '^v', ''
-          echo "version=$version" >> $env:GITHUB_OUTPUT
-        shell: pwsh
-
-      - name: Publish to WinGet
-        uses: vedantmgoyal9/winget-releaser@main
-        with:
-          identifier: DBAdminX.Diff   # ← 请替换成你的真实 WinGet identifier
-          version: ${{ steps.get-version.outputs.version }}
-          token: ${{ secrets.WINGET_TOKEN }}
-          installers-regex: 'DiffViewer-Installer.*\.exe$'
+          mobile: ios
+          args: "--target aarch64-apple-ios-sim"
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: "ios-[arch]-[bundle]"

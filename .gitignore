@@ -178,3 +178,15 @@ Output/
 
 
 .idea/
+
+# Node / Vite
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+src-tauri/.tauri/

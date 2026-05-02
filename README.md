@@ -1,27 +1,46 @@
-# Diff
+# Diff Viewer
 
-## Install
+A cross-platform diff viewer rebuilt with Tauri 2 and Vue 3.
 
-### Windows
+## Development
 
-1. By winget
-```ps1
-winget install DBAdminX.Diff
+```sh
+npm install
+npm run dev
 ```
 
-2. Download from release ***DiffViewer-Installer-version.exe***
-```shell
-sudo apt update
-sudo apt install ./package-name.deb
+Run the Tauri shell locally:
+
+```sh
+npm run tauri -- dev
 ```
 
-### Linux
+Build the web assets:
 
-1. Snap
-```shell
-sudo snap install DiffViewer
+```sh
+npm run build
 ```
 
-2. Download from release
+Build the desktop app:
 
-### MacOS
+```sh
+npm run tauri -- build
+```
+
+## CI
+
+GitHub Actions builds these targets:
+
+- Windows
+- Linux
+- macOS Intel
+- macOS Apple Silicon
+- Android
+- iOS simulator
+
+Tag releases with `v*`, for example:
+
+```sh
+git tag v1.3.0
+git push origin v1.3.0
+```

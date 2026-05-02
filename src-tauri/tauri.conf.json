@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Diff Viewer",
+  "version": "1.3.0",
+  "identifier": "com.dbadminx.diff",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Diff Viewer",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 360,
+        "minHeight": 640
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Cross-platform diff viewer",
+    "longDescription": "A modern cross-platform diff viewer built with Tauri and Vue.",
+    "android": {
+      "minSdkVersion": 24
+    },
+    "iOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}
