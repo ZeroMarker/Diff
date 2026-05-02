@@ -189,3 +189,24 @@ jobs:
           files: |
             src-tauri/gen/apple/build/**/*.app
             src-tauri/gen/apple/build/**/*.ipa
+
+  publish-to-winget:
+    name: Publish to WinGet
+    runs-on: windows-latest
+    needs: desktop
+    steps:
+      - name: Get version from tag
+        id: get-version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v', ''
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Publish to WinGet
+        uses: vedantmgoyal9/winget-releaser@main
+        with:
+          identifier: DBAdminX.Diff
+          version: ${{ steps.get-version.outputs.version }}
+          token: ${{ secrets.WINGET_TOKEN }}
+          installers-regex: '\.(exe|msi)$'
