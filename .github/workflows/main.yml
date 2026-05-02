@@ -175,7 +175,7 @@ jobs:
         run: npm run tauri -- ios init --ci
 
       - name: Build Tauri iOS app
-        run: npm run tauri -- ios build --ci --target aarch64-apple-ios-sim
+        run: npm run tauri -- ios build --ci --target aarch64-sim
 
       - name: Upload iOS workflow artifacts
         uses: actions/upload-artifact@v4
