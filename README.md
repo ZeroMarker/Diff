@@ -1,6 +1,27 @@
 # Diff Viewer
 
-A cross-platform diff viewer rebuilt with Tauri 2 and Vue 3.
+A cross-platform diff viewer rebuilt with Tauri 2 and Vue 3. Inspired by Beyond Compare's core comparison features.
+
+## Features
+
+- **Side-by-side comparison** with synchronized scrolling
+- **Inline character-level diff** highlighting for modified lines
+- **Line numbers** with gutter change markers (`+`, `-`, `~`)
+- **Change navigation** — jump between differences with F3/Shift+F3
+- **Drag & drop** file loading
+- **Unified patch** generation and copy
+- **Search** with Ctrl+F
+- **Dark/Light theme** toggle
+- **Status bar** with diff statistics
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+F` | Toggle search bar |
+| `F3` / `Ctrl+G` | Next change |
+| `Shift+F3` / `Ctrl+Shift+G` | Previous change |
+| `Escape` | Close search bar |
 
 ## Development
 
