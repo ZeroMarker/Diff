@@ -428,16 +428,59 @@ function renderDiffLine(lineIdx: number, line: DiffLine, side: "left" | "right")
 }
 
 // Syntax highlighting
+const langMap: Record<string, string> = {
+  js: "javascript", jsx: "javascript", mjs: "javascript",
+  ts: "typescript", tsx: "typescript", mts: "typescript",
+  py: "python", pyw: "python",
+  rs: "rust", java: "java",
+  c: "c", h: "c",
+  cpp: "cpp", cc: "cpp", cxx: "cpp", hpp: "cpp",
+  go: "go",
+  html: "html", htm: "html",
+  css: "css", scss: "css", less: "css",
+  json: "json", xml: "xml", svg: "xml",
+  yaml: "yaml", yml: "yaml",
+  md: "markdown", markdown: "markdown",
+  sh: "shell", bash: "shell", zsh: "shell", bat: "shell", ps1: "shell",
+  sql: "sql", toml: "toml",
+  ini: "ini", cfg: "ini", conf: "ini",
+};
+
+function detectLanguage(): string {
+  const name = (leftName.value !== "Original" ? leftName.value : rightName.value).toLowerCase();
+  const ext = name.split(".").pop() || "";
+  return langMap[ext] || "text";
+}
+
 async function ensureHighlighter() {
   if (highlighter) return;
   try {
-    const shiki = await import("shiki");
-    highlighter = await shiki.createHighlighter({
-      themes: ["github-light", "github-dark"],
-      langs: ["javascript", "typescript", "python", "rust", "java", "c", "cpp", "go", "html", "css", "json", "xml", "yaml", "markdown", "shell", "sql", "toml", "ini"],
+    const { createHighlighterCore } = await import("@shikijs/core");
+    const { createOnigurumaEngine } = await import("@shikijs/engine-oniguruma");
+    const githubLight = await import("@shikijs/themes/github-light");
+    const githubDark = await import("@shikijs/themes/github-dark");
+    highlighter = await createHighlighterCore({
+      themes: [githubLight.default, githubDark.default],
+      langs: [],
+      engine: createOnigurumaEngine(import("shiki/wasm")),
     });
   } catch (e) {
     console.warn("Failed to load syntax highlighter:", e);
+  }
+}
+
+async function loadLangForCurrentFile() {
+  if (!highlighter) return;
+  const lang = detectLanguage();
+  if (lang === "text") return;
+  const loaded = highlighter.getLoadedLanguages();
+  if (loaded.includes(lang)) return;
+  try {
+    const langModule = await import(`@shikijs/langs/${lang}`);
+    await highlighter.loadLanguage(langModule.default);
+    highlightCache.clear();
+  } catch {
+    // language not available
   }
 }
 
@@ -445,6 +488,9 @@ function getHighlightedLine(text: string, lineIdx: number, side: "left" | "right
   if (!highlighter || !text) return escapeHtml(text);
   const theme = isDark.value ? "github-dark" : "github-light";
   const lang = detectLanguage();
+  if (lang !== "text" && !highlighter.getLoadedLanguages().includes(lang)) {
+    return escapeHtml(text);
+  }
   const cacheKey = `${side}-${lineIdx}-${text}-${theme}-${lang}`;
   if (highlightCache.has(cacheKey)) return highlightCache.get(cacheKey)!;
 
@@ -456,32 +502,6 @@ function getHighlightedLine(text: string, lineIdx: number, side: "left" | "right
   } catch {
     return escapeHtml(text);
   }
-}
-
-function detectLanguage(): string {
-  const name = (leftName.value !== "Original" ? leftName.value : rightName.value).toLowerCase();
-  const ext = name.split(".").pop() || "";
-  const map: Record<string, string> = {
-    js: "javascript", jsx: "javascript", mjs: "javascript",
-    ts: "typescript", tsx: "typescript", mts: "typescript",
-    py: "python", pyw: "python",
-    rs: "rust",
-    java: "java",
-    c: "c", h: "c",
-    cpp: "cpp", cc: "cpp", cxx: "cpp", hpp: "cpp",
-    go: "go",
-    html: "html", htm: "html",
-    css: "css", scss: "css", less: "css",
-    json: "json",
-    xml: "xml", svg: "xml",
-    yaml: "yaml", yml: "yaml",
-    md: "markdown", markdown: "markdown",
-    sh: "shell", bash: "shell", zsh: "shell", bat: "shell", ps1: "shell",
-    sql: "sql",
-    toml: "toml",
-    ini: "ini", cfg: "ini", conf: "ini",
-  };
-  return map[ext] || "text";
 }
 
 // Scroll sync
@@ -812,6 +832,7 @@ watch(isDark, (v) => { document.documentElement.classList.toggle("dark", v); });
 watch(searchQuery, debounce(findSearchMatches, 200));
 watch(searchCaseSensitive, findSearchMatches);
 watch(searchRegex, findSearchMatches);
+watch([leftName, rightName], debounce(loadLangForCurrentFile, 150));
 watch(rules, (v) => {
   localStorage.setItem("diff-rules", JSON.stringify(v));
   highlightCache.clear();
